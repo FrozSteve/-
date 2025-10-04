@@ -1,0 +1,269 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Blender Game</title>
+<style>
+  body {
+    margin: 0;
+    font-family: sans-serif;
+    background: linear-gradient(180deg, #1a1f2b, #0d1117);
+    color: white;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    height: 100vh;
+    overflow: hidden;
+  }
+
+  /* Giant blend button */
+  #blendBtn {
+    margin: 20px;
+    font-size: 32px;
+    padding: 20px 60px;
+    background: linear-gradient(90deg, #22c1c3, #4cc2b6);
+    border: none;
+    border-radius: 20px;
+    cursor: pointer;
+    box-shadow: 0 6px 20px rgba(34,193,195,0.5);
+    font-weight: bold;
+    z-index: 5;
+  }
+  #blendBtn:active { transform: scale(0.97); }
+
+  .game {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* Blender visual */
+  .blender {
+    width: 240px;
+    height: 400px;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    z-index: 1;
+  }
+  .cup {
+    width: 180px;
+    height: 220px;
+    border: 4px solid rgba(255,255,255,0.5);
+    background: rgba(255,255,255,0.05);
+    border-radius: 8px 8px 30px 30px;
+    margin-top: 20px;
+    position: relative;
+    overflow: hidden;
+  }
+  .contents {
+    position: absolute;
+    bottom: 0;
+    width: 100%;
+    height: 0%;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-items: flex-end;
+    gap: 6px;
+    transition: height 0.5s;
+  }
+  .ingredient img {
+    width: 28px;
+    height: 28px;
+    transition: transform 0.3s;
+  }
+  .ingredient.spin img {
+    animation: spin 0.3s linear infinite;
+  }
+
+  @keyframes spin {
+    0% { transform: rotate(0deg) translateY(0); }
+    25% { transform: rotate(10deg) translateY(-3px); }
+    50% { transform: rotate(-10deg) translateY(3px); }
+    75% { transform: rotate(10deg) translateY(-3px); }
+    100% { transform: rotate(0deg) translateY(0); }
+  }
+
+  .base {
+    width: 200px;
+    height: 120px;
+    background: #222;
+    border-radius: 20px;
+    margin-top: -10px;
+    box-shadow: inset 0 -6px 20px rgba(0,0,0,0.6);
+  }
+
+  /* Ingredients bar */
+  .ingredients-bar {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: rgba(0,0,0,0.3);
+    padding: 12px;
+    display: flex;
+    justify-content: center;
+    gap: 20px;
+    z-index: 3;
+  }
+  .item img {
+    width: 40px;
+    height: 40px;
+    cursor: grab;
+  }
+  .item:active img { cursor: grabbing; }
+
+  /* Floating result */
+  .result {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%) scale(0);
+    font-size: 60px;
+    background: rgba(255,255,255,0.1);
+    padding: 20px 40px;
+    border-radius: 20px;
+    text-align: center;
+    opacity: 0;
+    transition: all 0.5s ease;
+    z-index: 10;
+  }
+  .result.show {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 1;
+  }
+</style>
+</head>
+<body>
+
+<button id="blendBtn">🔄 BLEND!</button>
+
+<div class="game">
+  <div class="blender" id="blender">
+    <div class="cup" id="cup">
+      <div class="contents" id="contents"></div>
+    </div>
+    <div class="base"></div>
+  </div>
+</div>
+
+<div class="ingredients-bar" id="items"></div>
+
+<div class="result" id="result">Result Here</div>
+
+<script>
+const INGREDIENTS = [
+  { id:'apple', img:'https://art.pixilart.com/sr5za786e9e99baws3.png', name:'Apple' },
+  { id:'banana', img:'https://art.pixilart.com/sr5z4c0e8b8baeaws3.png', name:'Banana' },
+  { id:'carrot', img:'https://art.pixilart.com/sr5z202de7a985aws3.png', name:'Carrot' },
+  { id:'milk', img:'https://www.pixilart.com/art/milk-sr5z33751707fbaws3', name:'Milk' },
+  { id:'cookie', img:'https://art.pixilart.com/sr5z350c677b62aws3.png', name:'Cookie' },
+  { id:'ice', img:'https://art.pixilart.com/sr5z57b4d03397aws3.png', name:'Ice' },
+];
+
+const itemsEl = document.getElementById('items');
+const cupEl = document.getElementById('cup');
+const contentsEl = document.getElementById('contents');
+const resultEl = document.getElementById('result');
+const blendBtn = document.getElementById('blendBtn');
+
+let cupContents = [];
+let emptyBlendCount = 0; // hidden counter
+
+// Render items in bottom bar
+INGREDIENTS.forEach(ing => {
+  const span = document.createElement('span');
+  span.className = 'item';
+  const img = document.createElement('img');
+  img.src = ing.img;
+  img.alt = ing.name;
+  span.appendChild(img);
+  span.title = ing.name;
+  span.draggable = true;
+  span.dataset.id = ing.id;
+  span.addEventListener('dragstart', e => {
+    e.dataTransfer.setData('text/plain', ing.id);
+  });
+  itemsEl.appendChild(span);
+});
+
+// Cup accepts drops
+cupEl.addEventListener('dragover', e => e.preventDefault());
+cupEl.addEventListener('drop', e => {
+  e.preventDefault();
+  const id = e.dataTransfer.getData('text/plain');
+  if (id) addToCup(id);
+});
+
+function addToCup(id) {
+  cupContents.push(id);
+  renderCup();
+}
+
+function renderCup() {
+  contentsEl.innerHTML = '';
+  cupContents.forEach(id => {
+    const ing = INGREDIENTS.find(i => i.id === id);
+    if (!ing) return;
+    const div = document.createElement('div');
+    div.className = 'ingredient';
+    const img = document.createElement('img');
+    img.src = ing.img;
+    img.alt = ing.name;
+    div.appendChild(img);
+    contentsEl.appendChild(div);
+  });
+  contentsEl.style.height = Math.min(cupContents.length * 15, 100) + '%';
+}
+
+// Blend action with animation + “Blended Hand Smoothie”
+blendBtn.addEventListener('click', () => {
+  if (cupContents.length === 0) {
+    emptyBlendCount++;
+    if (emptyBlendCount >= 5) {
+      // Darkly funny event: Blended Hand Smoothie
+      showResult("🩸🥤 Blended Hand Smoothie");
+      emptyBlendCount = 0; // reset counter
+    } else {
+      showResult(""); // optional: minimal feedback
+    }
+    return;
+  }
+
+  emptyBlendCount = 0; // reset if they actually put something in
+
+  // Spin animation
+  const ingredientsEls = document.querySelectorAll('.ingredient');
+  ingredientsEls.forEach(el => el.classList.add('spin'));
+
+  setTimeout(() => {
+    ingredientsEls.forEach(el => el.classList.remove('spin'));
+    showResult(calculateResult());
+    cupContents = [];
+    renderCup();
+  }, 1500);
+});
+
+function calculateResult() {
+  const set = new Set(cupContents);
+  let result = "🤷 Unknown Mix";
+  if (set.has('apple') && set.has('banana')) result = "🍹 Apple-Banana Smoothie";
+  else if (set.has('cookie') && set.has('milk')) result = "🥤 Cookie Milkshake";
+  else if (set.has('carrot') && set.has('apple')) result = "🥕🍎 Carrot-Apple Juice";
+  else if (set.size === 1) result = "🥤 Pure " + INGREDIENTS.find(i=>i.id===cupContents[0]).name;
+  return result;
+}
+
+function showResult(text) {
+  resultEl.textContent = text;
+  resultEl.classList.add('show');
+  setTimeout(()=> resultEl.classList.remove('show'), 2000);
+}
+</script>
+
+</body>
+</html>
